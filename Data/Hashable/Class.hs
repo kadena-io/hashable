@@ -7,6 +7,10 @@
 {-# LANGUAGE PolyKinds #-} -- For TypeRep instances
 #endif
 
+#ifdef __GHCJS__
+ {-# LANGUAGE JavaScriptFFI, UnboxedTuples, GHCForeignImportPrim #-}
+#endif
+
 ------------------------------------------------------------------------
 -- |
 -- Module      :  Data.Hashable.Class
@@ -140,13 +144,19 @@ import qualified Data.ByteString.Lazy.Internal as BL  -- foldlChunks
 import qualified Data.ByteString.Short.Internal as BSI
 #endif
 
-#ifdef VERSION_integer_gmp
 
+#ifdef VERSION_integer_gmp
 # if MIN_VERSION_integer_gmp(1,0,0)
 #  define MIN_VERSION_integer_gmp_1_0_0
 # endif
 
+
+#ifndef __GHCJS__
 import GHC.Exts (Int(..))
+#else
+import GHC.Exts (Int(..), Int#)
+#endif
+
 import GHC.Integer.GMP.Internals (Integer(..))
 # if defined(MIN_VERSION_integer_gmp_1_0_0)
 import GHC.Exts (sizeofByteArray#)
@@ -169,6 +179,11 @@ import Data.Functor.Compose (Compose(..))
 import qualified Data.Functor.Product as FP
 import qualified Data.Functor.Sum as FS
 #endif
+
+#ifdef __GHCJS__
+import Data.JSString (JSString)
+#endif
+
 
 import Data.String (IsString(..))
 
@@ -638,10 +653,18 @@ instance Hashable BSI.ShortByteString where
         hashByteArrayWithSalt ba 0 (BSI.length sbs) salt
 #endif
 
+#ifndef __GHCJS__
 instance Hashable T.Text where
     hashWithSalt salt (T.Text arr off len) =
         hashByteArrayWithSalt (TA.aBA arr) (off `shiftL` 1) (len `shiftL` 1)
         salt
+#else
+instance Hashable T.Text where
+    hashWithSalt salt (T.Text txt) =
+        hashByteArrayWithSalt ba (0 `shiftL` 1) (I# len `shiftL` 1)
+        (hashWithSalt salt (I# len))
+        where (# ba, len #) = js_textFromJSString txt
+#endif
 
 instance Hashable TL.Text where
     hashWithSalt = TL.foldlChunks hashWithSalt
@@ -938,3 +961,10 @@ instance Ord1 Hashed where
 instance Show1 Hashed where
   liftShowsPrec sp _ d (Hashed a _) = showsUnaryWith sp "hashed" d a
 #endif
+
+#ifdef __GHCJS__
+foreign import javascript unsafe
+  "h$textFromString"
+  js_textFromJSString :: JSString -> (# ByteArray#, Int# #)
+#endif
+
